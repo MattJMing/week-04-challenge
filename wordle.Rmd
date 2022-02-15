@@ -1,0 +1,236 @@
+---
+title: "WordleCode"
+author: "Matt Ming"
+date: "2/8/2022"
+output: html_document
+---
+
+# Set Up
+
+## Loading Dictionaries
+
+First, create a function to read in the dictionary files and convert them to
+single-column vectors
+
+```{r}
+load_dictionary <- function(filename){
+  f <- read.csv(filename,header = TRUE)
+  f <- f[,1] #Turn the one-column data frame from read.csv into a vector
+  return(f)
+}
+```
+
+Now, loading in both dictionaries as **valid_list** (Collin's Scrabble dictionary)
+and **solution_list** (10000 common words dictionary)
+
+```{r}
+valid_list <- load_dictionary("collins-scrabble-words-2019.txt")
+solution_list <- load_dictionary("google-10000-english-usa-no-swears.txt")
+```
+
+Narrowing down the **solution_list** to only contain words found in 
+**valid_list**
+
+```{r}
+solution_list <- intersect(solution_list,valid_list)
+```
+
+After narrowing **solution_list**, it goes from containing 9884 words to 8336
+words
+
+## Getting solution word
+
+Now, we want to create a function **pick_solution** which will get a 5-letter
+word from the list of solution words and split that word into a vector of its 
+characters
+
+```{r}
+pick_solution <- function(solutions,word_length = 5){
+  #First filter all possible solution words to include only those which are
+  #the correct length
+  lengthlist <- solutions[which(nchar(solutions) == word_length)]
+  #Choose one word from the list of correct-length words
+  solword <- sample(lengthlist,1)
+  #Split the word into a vector containing each of the letters in the word
+  solvec <- strsplit(solword,c())[[1]]
+  return(solvec)
+}
+solution <- pick_solution(solution_list,5) #Choose a solution word
+#Note that we will also pick a new solution later when running the game
+```
+
+# Playing the Game
+
+## Helper Function
+
+We'll want to first construct a helper function **evaluate_guess** which
+evaluates the user's guess and outputs a vector showing if each position of the 
+guess was an exact match to the letter of the solution, was contained in the 
+solution but not in the correct spot, or was not in the solution at all
+
+```{r}
+evaluate_guess <- function(guess,sol){
+  #Initialize a vector which will store our evaluation characters
+  eval_vec <- c()
+  
+  eval_vec[guess == sol] <- "*" #First check which characters in "guess" are
+  #an exact match with the characters in "sol"
+  eval_vec[!(guess %in% sol)] <- "-" #Check which characters in "guess" are
+  #not in "sol"
+  sol[sol == guess] <- "-" #Change characters matching in "sol" to "-"
+  #so that they don't get double-counted
+  
+  #Set up a for loop to go through the last unchecked characters in "guess"
+  for(i in which(is.na(eval_vec))){
+    if(guess[i] %in% sol){ #If the remaining unchecked characters are in "sol"
+      eval_vec[i] <- "+"
+      sol[match(guess[i],sol)] <- "-" #Change character in sol to "-" so that
+      #it doesn't get double counted
+    }else{eval_vec[i] <- "-"} #If the remaining unchecked characters are not
+    #in "sol"
+  }
+  return(eval_vec)
+}
+```
+
+## Main Game
+
+We'll now start setting up the code for actually playing the game.  The function
+**play_wordle** should take arguments *solution*, *valid_list*, *num_guesses*, 
+and *word_length*, and do the following:
+
+1. Tell the players the rules: "You have [*nun_guesses*] chances to guess a word 
+of length [*word_length*]"
+
+2. Display the letters not yet guessed as "Possible Letters:..."
+
+3. Prompt the player for a guess and check if the guess is valid (i.e., correct
+length, no numbers/non-letter characters, is a valid word), and convert the 
+guess to a vector of letters (same as the solution vector)
+
+4. Compare the guess w/ the solution using the **evaluate_guess** helper 
+fucntion created above
+
+5. Update the list of not-yet-guessed letters
+
+6. Check if the puzzle was solved.  If the player got the word correct, give a
+"YOU WON" message as well as guess and feedback history.  If the player was
+not correct, prompt for another guess
+
+7. If the player has gone past the number of allotted guesses and is still not
+correct, return a "YOU LOSE" message and give the guess and feedback history
+
+```{r}
+play_wordle <- function(solution,valid_list,num_guesses = 6,word_length = 5){
+  #Initializing function
+  guesses <- 1 #Initialize a variable for counting number of guesses
+  letters_left <- LETTERS #Initialize a vector containing all letters yet to be
+  #guessed (starts out containing all capital English letters)
+  guess_hist <- list() #Initialize list which will store all user guesses
+  eval_hist <- list() #Initialize list which will store all evaluations
+  
+  #Formatting for making the game presentation look nice
+  cat("\n\nWelcome to Matt's Wordle!\n\n")
+  #Explaining the rules of Wordle
+  cat("You have",num_guesses,"chances to guess a word of length",word_length)
+  cat("\nSymbols Legend:") #Explaining the evaluation symbols
+  cat("\n* = Letter is in correct spot")
+  cat("\n+ = Letter is in solution but in a different spot")
+  cat("\n- = Letter is not in solution")
+  cat("\n\n\n")
+  
+  #Set up loop to go until the game is declared over (win or lose)
+  gameover <- FALSE #Set up another variable to keep track of if the game is
+  #over (i.e., the player has won or lost)
+  while(gameover == FALSE){
+    #Formatting
+    cat("Guess #",guesses,sep = "") #Display current guess number
+    cat("\nPossible Letters:",letters_left) #Display list of possible letters
+    cat("\n")
+    
+    #Get user input for a guess
+    guess <- readline(paste0("Enter a ",word_length,
+                             "-letter word here, then press <ENTER>: "))
+    
+    #Set up a check for if the user's guess is a valid word
+    is_valid <- FALSE
+    #Continue to ask for user input as long as user supplies an invalid guess
+    #Entering an invalid word should not count towards your guess number
+    while(is_valid == FALSE){
+      if(nchar(guess) > word_length){ #Guess was too long
+        guess <- readline(paste0("Your guess was too long. Enter a ",
+                                 word_length,
+                                 "-letter word here, then press <ENTER>: "))
+      }else if(nchar(guess) < word_length){ #Guess was too short
+        guess <- readline(paste0("Your guess was too short. Enter a ",
+                                 word_length,
+                                 "-letter word here, then press <ENTER>: "))
+      }else if(!(toupper(guess) %in% valid_list)){ #Guess was not a valid word
+        guess <- readline(paste0("Your guess was not a valid word. Enter a ",
+                                 word_length,
+                                 "-letter word here, then press <ENTER>: "))
+      }else{is_valid <- TRUE} #If no invalid errors, continue to next step
+    }
+    
+    #Convert guess into vector of characters
+    guess <- strsplit(toupper(guess),c())[[1]]
+    guess_hist[[guesses]] <- guess #Add guess to list of guesses
+    cat("Your Guess:",guess)
+    eval <- evaluate_guess(guess,solution) #Evaluate the guess
+    eval_hist[[guesses]] <- eval #Add evaluation to list of evaluations
+    cat("\nEvaluation:",eval)
+    
+    #Checks for the end of the game
+    if(length(which(eval == "*")) == word_length){ #If all evaluations are "*"
+      #meaning the user correctly guessed the word
+      cat("\n\n\n")
+      cat("YOU WON!")
+      cat("\nYou used",guesses,"guesses") #Show number of guesses needed
+      gameover <- TRUE #Exit while loop
+    }else if(guesses < num_guesses){ #If guess is not correct but user still
+      #has guesses remaining
+      guesses <- guesses + 1 #Increase guess count by 1
+      #Change list of possible letters to remove the ones which were guessed and
+      #not part of the solution
+      letters_left <- setdiff(letters_left,guess[which(eval == "-")])
+      letters_left <- union(letters_left,
+                            guess[which(eval == "+" | eval == "*")])
+      letters_left <- sort(letters_left)
+      cat("\n\n")
+    }else{ #If user is not correct and is out of guesses
+      cat("\n\n\n")
+      cat("YOU LOSE :(")
+      cat("\nThe correct word was ")
+      cat(solution,sep = "")
+      gameover <- TRUE #Exit while loop
+    }
+  }
+  #Formatting
+  cat("\n\n\n")
+  #Print a list of all of user's guesses and evaluations
+  cat("Your guesses:")
+  cat("\n")
+  for(i in 1:length(guess_hist)){
+    cat("\nGuess #",i,": ",sep = "")
+    cat(guess_hist[[i]])
+    cat("\n          ",sep = "")
+    cat(eval_hist[[i]])
+  }
+}
+```
+
+# Play Time!
+
+Now, actually running a play of the game -- running the following chunk of code
+will allow you to actually play (Note that the arguments which take numbers have
+default values, so in this case the numbers are optional):
+
+```{r,eval=FALSE}
+solution <- pick_solution(solution_list,5) #Choose a solution word
+play_wordle(solution,valid_list,6,5) #Start Wordle game
+```
+
+Note that because of the use of user input in the **play_wordle** function, the
+above code is not evaluated so that the .Rmd knit is able to work
+
+Have fun!
